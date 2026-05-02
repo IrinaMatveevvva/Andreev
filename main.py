@@ -1,90 +1,114 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
-import json
 import random
 import string
+import json
+from datetime import datetime
 
-HISTORY_FILE = 'history.json'
-MIN_LENGTH = 4
-MAX_LENGTH = 32
+HISTORY_FILE = 'password_history.json'
 
-def load_history():
-    try:
-        with open(HISTORY_FILE, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    except FileNotFoundError:
-        return []
+class PasswordGenerator:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Random Password Generator")
+        self.root.geometry("600x550")
 
-def save_history(data):
-    with open(HISTORY_FILE, 'w', encoding='utf-8') as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+        self.history = self.load_history()
+        self.setup_ui()
 
-def generate_password():
-    length = scale_length.get()
-    use_digits = var_digits.get()
-    use_letters = var_letters.get()
-    use_special = var_special.get()
+    def setup_ui(self):
+        # --- Настройки пароля ---
+        frame_settings = ttk.LabelFrame(self.root, text="Настройки пароля", padding=15)
+        frame_settings.pack(padx=10, pady=10, fill="x")
 
-    if not (use_digits or use_letters or use_special):
-        messagebox.showerror("Ошибка", "Выберите хотя бы один тип символов.")
-        return
+        # Длина пароля
+        ttk.Label(frame_settings, text="Длина пароля:").grid(row=0, column=0, sticky="w")
+        self.length_var = tk.IntVar(value=12)
+        self.scale_length = tk.Scale(frame_settings, from_=4, to=32, orient="horizontal", variable=self.length_var)
+        self.scale_length.grid(row=0, column=1, padx=5, sticky="ew")
+        
+        self.lbl_length_num = ttk.Label(frame_settings, textvariable=self.length_var)
+        self.lbl_length_num.grid(row=0, column=2, padx=5)
 
-    chars = ''
-    if use_digits: chars += string.digits
-    if use_letters: chars += string.ascii_letters
-    if use_special: chars += string.punctuation
+        # Чекбоксы символов
+        self.use_digits = tk.BooleanVar(value=True)
+        self.use_letters = tk.BooleanVar(value=True)
+        self.use_special = tk.BooleanVar(value=False)
 
-    password = ''.join(random.choices(chars, k=length))
-    entry_password.delete(0, tk.END)
-    entry_password.insert(0, password)
+        ttk.Checkbutton(frame_settings, text="Цифры (0-9)", variable=self.use_digits).grid(row=1, column=0, sticky="w", pady=5)
+        ttk.Checkbutton(frame_settings, text="Буквы (a-z, A-Z)", variable=self.use_letters).grid(row=1, column=1, sticky="w")
+        ttk.Checkbutton(frame_settings, text="Спецсимволы (!@#$)", variable=self.use_special).grid(row=1, column=2, sticky="w")
 
-    history.append(password)
-    save_history(history)
-    refresh_history()
+        # Кнопка генерации
+        self.btn_generate = ttk.Button(frame_settings, text="Сгенерировать пароль", command=self.generate_password)
+        self.btn_generate.grid(row=2, column=0, columnspan=3, pady=15)
 
-def refresh_history():
-    for item in tree.get_children():
-        tree.delete(item)
-    for pwd in history[::-1]:
-        tree.insert("", "end", values=(pwd,))
+        # Поле вывода результата
+        self.entry_result = ttk.Entry(self.root, font=("Courier", 14), justify="center")
+        self.entry_result.pack(padx=10, pady=5, fill="x")
 
-history = load_history()
+        # --- История ---
+        frame_hist = ttk.LabelFrame(self.root, text="История генераций", padding=10)
+        frame_hist.pack(padx=10, pady=10, fill="both", expand=True)
 
-root = tk.Tk()
-root.title("Random Password Generator")
-root.geometry("500x400")
+        self.tree = ttk.Treeview(frame_hist, columns=("date", "pass", "len"), show="headings")
+        self.tree.heading("date", text="Дата и время")
+        self.tree.heading("pass", text="Пароль")
+        self.tree.heading("len", text="Длина")
+        
+        self.tree.column("len", width=50, anchor="center")
+        self.tree.pack(fill="both", expand=True)
 
-frame_options = ttk.LabelFrame(root, text="Параметры пароля")
-frame_options.pack(padx=10, pady=10, fill="x")
+        self.refresh_table()
 
-ttk.Label(frame_options, text="Длина:").grid(row=0, column=0, padx=5, pady=5, sticky="w")
-scale_length = tk.Scale(frame_options, from_=MIN_LENGTH, to=MAX_LENGTH, orient="horizontal")
-scale_length.set(12)
-scale_length.grid(row=0, column=1, padx=5, pady=5)
+    def generate_password(self):
+        length = self.length_var.get()
+        
+        # Валидация выбора типов символов
+        chars = ""
+        if self.use_digits.get(): chars += string.digits
+        if self.use_letters.get(): chars += string.ascii_letters
+        if self.use_special.get(): chars += string.punctuation
 
-var_digits = tk.BooleanVar(value=True)
-ttk.Checkbutton(frame_options, text="Цифры", variable=var_digits).grid(row=1, column=0, padx=5, pady=5, sticky="w")
-var_letters = tk.BooleanVar(value=True)
-ttk.Checkbutton(frame_options, text="Буквы", variable=var_letters).grid(row=1, column=1, padx=5, pady=5, sticky="w")
-var_special = tk.BooleanVar(value=True)
-ttk.Checkbutton(frame_options, text="Спецсимволы", variable=var_special).grid(row=2, column=0, padx=5, pady=5, sticky="w")
+        if not chars:
+            messagebox.showwarning("Ошибка", "Выберите хотя бы один тип символов!")
+            return
 
-btn_generate = ttk.Button(frame_options, text="Сгенерировать", command=generate_password)
-btn_generate.grid(row=2, column=1, padx=5, pady=5)
+        # Генерация
+        password = "".join(random.choice(chars) for _ in range(length))
+        
+        # Отображение
+        self.entry_result.delete(0, tk.END)
+        self.entry_result.insert(0, password)
 
-ttk.Label(root, text="Сгенерированный пароль:").pack(padx=10, pady=5, anchor="w")
-entry_password = ttk.Entry(root, width=40)
-entry_password.pack(padx=10, pady=5, fill="x")
+        # Сохранение в историю
+        new_entry = {
+            "date": datetime.now().strftime("%d.%m.%Y %H:%M"),
+            "password": password,
+            "length": length
+        }
+        self.history.append(new_entry)
+        self.save_history()
+        self.refresh_table()
 
-frame_history = ttk.LabelFrame(root, text="История паролей")
-frame_history.pack(padx=10, pady=10, fill="both", expand=True)
+    def load_history(self):
+        try:
+            with open(HISTORY_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            return []
 
-tree = ttk.Treeview(frame_history, columns=("Пароль",), show="headings")
-tree.heading("Пароль", text="Пароль")
-tree.pack(side="left", fill="both", expand=True)
-scrollbar = ttk.Scrollbar(frame_history, orient="vertical", command=tree.yview)
-scrollbar.pack(side="right", fill="y")
-tree.configure(yscrollcommand=scrollbar.set)
+    def save_history(self):
+        with open(HISTORY_FILE, 'w', encoding='utf-8') as f:
+            json.dump(self.history, f, ensure_ascii=False, indent=2)
 
-refresh_history()
-root.mainloop()
+    def refresh_table(self):
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+        for h in reversed(self.history):
+            self.tree.insert("", "end", values=(h['date'], h['password'], h['length']))
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = PasswordGenerator(root)
+    root.mainloop()
